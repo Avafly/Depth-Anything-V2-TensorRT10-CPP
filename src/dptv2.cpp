@@ -161,8 +161,9 @@ DPTv2::DPTv2(const std::string &model_path, const int target_size, const int max
     CUDA_ASSERT(cudaMalloc(&buffers_[1], max_out_size_byte));
 
     // set tensor addresses
-    context_->setInputTensorAddress(in_name_.c_str(), buffers_[0]);
-    context_->setOutputTensorAddress(out_name_.c_str(), buffers_[1]);
+    if (!context_->setInputTensorAddress(in_name_.c_str(), buffers_[0]) ||
+        !context_->setOutputTensorAddress(out_name_.c_str(), buffers_[1]))
+        throw std::runtime_error("Failed to set tensor addresses");
 }
 
 DPTv2::~DPTv2()
@@ -318,7 +319,8 @@ std::vector<cv::Mat> DPTv2::Predict(const std::vector<cv::Mat> &images_bgr) cons
     trt_in_dims.d[1] = 3;
     trt_in_dims.d[2] = max_rows;
     trt_in_dims.d[3] = max_cols;
-    context_->setInputShape(in_name_.c_str(), trt_in_dims);
+    if (!context_->setInputShape(in_name_.c_str(), trt_in_dims))
+        throw std::runtime_error("Failed to set input shape");
     auto out_dims = context_->getTensorShape(out_name_.c_str());
     size_t in_size_byte = batch_size * 3 * max_rows * max_cols * sizeof(float);
     size_t out_size_byte =
