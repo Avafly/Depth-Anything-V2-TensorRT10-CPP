@@ -23,7 +23,9 @@ find_package(OpenCV REQUIRED)
 find_package(Iconv QUIET)
 find_package(OpenEXR QUIET)
 # cuda
-set(CUDAToolkit_ROOT "/usr/local/cuda-12.9")
+if(NOT DEFINED CUDAToolkit_ROOT AND EXISTS "/usr/local/cuda")
+    set(CUDAToolkit_ROOT "/usr/local/cuda")
+endif()
 find_package(CUDAToolkit REQUIRED)
 
 # main
