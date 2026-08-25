@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -216,12 +215,16 @@ cv::Mat DPTv2::Predict(const cv::Mat &image_bgr) const
     int rsz_rows = static_cast<int>(img_rows * scale / 14.0) * 14;
     int rsz_cols = static_cast<int>(img_cols * scale / 14.0) * 14;
 
-    cv::Mat processed, blob;
+    cv::Mat processed;
     cv::resize(image_bgr, processed, cv::Size(rsz_cols, rsz_rows), 0, 0, cv::INTER_CUBIC);
     processed.convertTo(processed, CV_32FC3, 1.0 / 255.0);
     cv::subtract(processed, mean_bgr_, processed);
     cv::divide(processed, norm_bgr_, processed);
+    const int blob_dims[4]{1, 3, rsz_rows, rsz_cols};
+    cv::Mat blob(4, blob_dims, CV_32F, pinned_in_host_);
     cv::dnn::blobFromImage(processed, blob, 1.0, cv::Size(), cv::Scalar(), true, false, CV_32F);
+    if (blob.data != reinterpret_cast<uchar *>(pinned_in_host_))
+        throw std::runtime_error("blobFromImage did not write into pinned memory");
 
     // inference
     nvinfer1::Dims trt_in_dims{};
@@ -241,8 +244,6 @@ cv::Mat DPTv2::Predict(const cv::Mat &image_bgr) const
                  trt_in_dims.d[3]);
     SPDLOG_DEBUG("Output dims: c={:<2} h={:<4} w={:<4}", out_dims.d[0], out_dims.d[1],
                  out_dims.d[2]);
-
-    memcpy(pinned_in_host_, blob.data, in_size_byte);
 
     // execute
     // measure pure inference elapsed time
@@ -303,9 +304,12 @@ std::vector<cv::Mat> DPTv2::Predict(const std::vector<cv::Mat> &images_bgr) cons
         cv::subtract(processed_images[i], mean_bgr_, processed_images[i]);
         cv::divide(processed_images[i], norm_bgr_, processed_images[i]);
     }
-    cv::Mat blob;
+    const int blob_dims[4]{batch_size, 3, max_rows, max_cols};
+    cv::Mat blob(4, blob_dims, CV_32F, pinned_in_host_);
     cv::dnn::blobFromImages(processed_images, blob, 1.0, cv::Size(), cv::Scalar(), true, false,
                             CV_32F);
+    if (blob.data != reinterpret_cast<uchar *>(pinned_in_host_))
+        throw std::runtime_error("blobFromImages did not write into pinned memory");
 
     // inference
     nvinfer1::Dims trt_in_dims{};
@@ -324,8 +328,6 @@ std::vector<cv::Mat> DPTv2::Predict(const std::vector<cv::Mat> &images_bgr) cons
     SPDLOG_DEBUG("Batch input dims:  b={} c={} h={} w={}", trt_in_dims.d[0], trt_in_dims.d[1],
                  trt_in_dims.d[2], trt_in_dims.d[3]);
     SPDLOG_DEBUG("Batch output dims: c={} h={} w={}", out_dims.d[0], out_dims.d[1], out_dims.d[2]);
-
-    memcpy(pinned_in_host_, blob.data, in_size_byte);
 
     // execute
     [[maybe_unused]] auto start_time = cv::getTickCount();
